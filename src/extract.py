@@ -3,6 +3,7 @@ import numpy as np
 import random
 import os
 import hashlib
+from a51 import A51 
 
 class StegoExtract:
     def __init__(self, video_path, a51_key=None, stego_key=None, output_dir=None):
@@ -48,14 +49,10 @@ class StegoExtract:
                         raise ValueError("Metadata format is corrupted")
         raise ValueError("End tag not found")
 
+    # Tambahan Fungsi A5/1
     def a51_decrypt(self, ciphertext_bytes):
-        random.seed(self.get_seed(self.a51_key))
-        keystream = bytearray(random.getrandbits(8) for _ in range(len(ciphertext_bytes)))
-
-        plaintext = bytearray()
-        for c, k in zip(ciphertext_bytes, keystream):
-            plaintext.append(c ^ k)
-        return plaintext
+        cipher = A51(self.a51_key)
+        return cipher.decrypt(ciphertext_bytes)
 
     def extraction(self):
         if not os.path.exists(self.video_path):

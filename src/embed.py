@@ -4,6 +4,7 @@ import os
 import random
 import hashlib
 import math
+from a51 import A51
 
 class StegoEmbed:
     def __init__(self, video_path, secret_msg, a51_key=None, stego_key=None, output_path="stego_video.avi"):
@@ -25,11 +26,14 @@ class StegoEmbed:
         psnr = 10 * math.log10((255 ** 2) / mse)
         return mse, psnr
     
+    # Perbaikan fungsi enkripsi A5/1 
     def a51_encrypt(self, data_bytes):
-        # note: simple version
-        random.seed(self.get_seed(self.a51_key))
-        keystream = bytearray(random.getrandbits(8) for _ in range(len(data_bytes)))
-        return bytearray(c ^ k for c, k in zip(data_bytes, keystream))
+        cipher = A51(self.a51_key)
+        return cipher.encrypt(data_bytes)
+
+    def a51_decrypt(self, data_bytes):
+        cipher = A51(self.a51_key)
+        return cipher.decrypt(data_bytes)
     
     def embed_rgb(self, pixel, message_byte):
         r, g, b = int(pixel[0]), int(pixel[1]), int(pixel[2])
@@ -58,16 +62,19 @@ class StegoEmbed:
             msg_type = "text"
 
         if encrypt:
-            if not self.a51_key: raise ValueError("Kunci A5/1 wajib diisi!")
+            if not self.a51_key:
+                raise ValueError("Kunci A5/1 wajib diisi!")
             payload = self.a51_encrypt(payload)
 
         cap = cv2.VideoCapture(self.video_path)
         fps = cap.get(cv2.CAP_PROP_FPS)
-        width = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) 
+
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))  # FIX: nama variabel
         w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-        total_pixels = (width - 1) * w * h
+        total_pixels = (total_frames - 1) * w * h  # FIX: pakai total_frames
+
         if len(payload) > total_pixels:
             cap.release()
             raise ValueError(f"Pesan terlalu besar! Kapasitas maksimum: {total_pixels} bytes.")
