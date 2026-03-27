@@ -37,8 +37,9 @@ else:
 # =========================
 print("=== TEST EMBED ===")
 
-video_path = "video.avi"  
-stego_path = "stego_video.avi"
+# Customable (Bisa diubah sesuai kebutuhan antara avi/mp4, pesan teks/file, dll)
+video_path = "video2.mp4" 
+stego_path = "stego_video.mp4"
 message = "INI PESAN RAHASIA"
 
 embedder = StegoEmbed(
