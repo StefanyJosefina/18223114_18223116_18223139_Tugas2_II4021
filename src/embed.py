@@ -4,7 +4,6 @@ import os
 import random
 import hashlib
 import math
-import imageio
 from a51 import A51
 
 class StegoEmbed:
@@ -80,18 +79,8 @@ class StegoEmbed:
             cap.release()
             raise ValueError(f"Pesan terlalu besar! Kapasitas maksimum: {total_pixels} bytes.")
         
-        is_mp4 = self.output_path.lower().endswith('.mp4')
-
-        if is_mp4:
-            writer = imageio.get_writer(
-                self.output_path, 
-                fps=fps, 
-                codec='libx264rgb', 
-                ffmpeg_params=['-crf', '0', '-loglevel', 'error']
-            )
-        else:
-            fourcc = cv2.VideoWriter_fourcc(*'FFV1')
-            out = cv2.VideoWriter(self.output_path, fourcc, fps, (w, h))
+        fourcc = cv2.VideoWriter_fourcc(*'FFV1') 
+        out = cv2.VideoWriter(self.output_path, fourcc, fps, (w, h))
 
         meta_str = f"{msg_type};{ext};{len(payload)};{filename};{int(encrypt)};{int(use_random)};{total_pixels}||"
         meta_bytes = meta_str.encode('utf-8')
@@ -105,11 +94,7 @@ class StegoEmbed:
                 if idx < len(meta_bytes):
                     frame[y, x] = self.embed_rgb(frame[y, x], meta_bytes[idx])
                     idx += 1
-
-        if is_mp4:
-            writer.append_data(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-        else:
-            out.write(frame)
+        out.write(frame)
 
         if use_random: 
             if not self.stego_key: raise ValueError("Stego-key wajib diisi!")
@@ -142,19 +127,11 @@ class StegoEmbed:
                 total_psnr += psnr
                 count += 1
 
-            if is_mp4:
-                writer.append_data(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-            else:
-                out.write(frame)
-                
+            out.write(frame)
             current_f += 1
 
         cap.release()
-
-        if is_mp4:
-            writer.close()
-        else:
-            out.release()
+        out.release()
 
         avg_psnr = total_psnr / count if count > 0 else 100
         return {"status": "success", "psnr": avg_psnr, "mse": total_mse/count if count > 0 else 0}
