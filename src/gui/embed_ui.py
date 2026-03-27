@@ -1,41 +1,45 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QLineEdit,
-    QLabel, QFileDialog, QProgressBar
+    QLabel, QFileDialog, QProgressBar, QComboBox
 )
-from PyQt5.QtCore import QThread, pyqtSignal, QTimer
+from PyQt5.QtCore import QThread, pyqtSignal, QTimer, Qt
+from gui.style import load_pixel_font
 from embed import StegoEmbed
 import os
+import shutil
+import tempfile
 
 
 class EmbedWorker(QThread):
     finished = pyqtSignal(dict)
     error = pyqtSignal(str)
 
-    def __init__(self, video, msg, key, stego, output):
+    def __init__(self, video, msg, output_format):
         super().__init__()
         self.video = video
         self.msg = msg
-        self.key = key
-        self.stego = stego
-        self.output = output
+        self.output_format = output_format.lower()
+
+        temp_dir = tempfile.gettempdir()
+        self.temp_output = os.path.join(temp_dir, f"temp_stego.{self.output_format}")
 
     def run(self):
         try:
             obj = StegoEmbed(
                 self.video,
                 self.msg,
-                self.key,
-                self.stego,
-                output_path=self.output
+                None,
+                None,
+                self.temp_output
             )
 
-            result = obj.run_embedding(
-                is_file=False,
-                encrypt=bool(self.key),
-                use_random=bool(self.stego)
-            )
+            result = obj.run_embedding()
 
-            self.finished.emit(result)
+            self.finished.emit({
+                "result": result,
+                "path": self.temp_output,
+                "format": self.output_format
+            })
 
         except Exception as e:
             self.error.emit(str(e))
@@ -46,129 +50,184 @@ class EmbedPage(QWidget):
         super().__init__()
 
         self.video_path = ""
+        self.output_path = None
+        self.output_format = "avi"
 
         layout = QVBoxLayout()
+        layout.setAlignment(Qt.AlignCenter)
+        layout.setSpacing(10)
 
-        layout.addWidget(QLabel("MODE: EMBED"))
+        title = QLabel("EMBED")
+        title.setFont(load_pixel_font(14))
+        title.setAlignment(Qt.AlignCenter)
 
-        back_btn = QPushButton("BACK")
-        back_btn.clicked.connect(go_back)
-        layout.addWidget(back_btn)
+        btn_select = QPushButton("Select Video")
+        btn_select.setFont(load_pixel_font(10))
+        btn_select.clicked.connect(self.choose_file)
 
-        btn_file = QPushButton("Pilih Video")
-        btn_file.clicked.connect(self.choose_file)
-        layout.addWidget(btn_file)
+        self.file_label = QLabel("No file")
+        self.file_label.setAlignment(Qt.AlignCenter)
 
-        self.file_label = QLabel("No file selected")
-        layout.addWidget(self.file_label)
+        self.input = QLineEdit()
+        self.input.setPlaceholderText("Message")
+        self.input.setStyleSheet("""
+        QLineEdit {
+            background-color: white;
+            color: black;
+            border: 1px solid black;
+            padding: 6px;
+        }
+        """)
 
-        self.input_msg = QLineEdit()
-        self.input_msg.setPlaceholderText("Masukkan pesan rahasia")
-        layout.addWidget(self.input_msg)
+        format_label = QLabel("Output Format")
+        format_label.setFont(load_pixel_font(8))
+        format_label.setAlignment(Qt.AlignCenter)
+
+        self.format_box = QComboBox()
+        self.format_box.addItems(["AVI", "MP4"])
+        self.format_box.setCurrentText("AVI")
+        self.format_box.setStyleSheet("""
+        QComboBox {
+            background-color: white;
+            color: black;
+            border: 1px solid black;
+            padding: 4px;
+        }
+        QComboBox QAbstractItemView {
+            background-color: white;
+            color: black;
+            selection-background-color: #dcdcdc;
+            selection-color: black;
+        }
+        """)
 
         self.progress = QProgressBar()
-        self.progress.setValue(0)
+        self.progress.setVisible(False)
+
+        run = QPushButton("RUN")
+        run.setFont(load_pixel_font(10))
+        run.clicked.connect(self.run_embed)
+
+        self.download_btn = QPushButton("DOWNLOAD")
+        self.download_btn.setFont(load_pixel_font(10))
+        self.download_btn.setVisible(False)
+        self.download_btn.clicked.connect(self.save_file)
+
+        self.result = QLabel("")
+        self.result.setAlignment(Qt.AlignCenter)
+
+        back = QPushButton("BACK")
+        back.setFont(load_pixel_font(10))
+        back.clicked.connect(go_back)
+
+        layout.addWidget(title)
+        layout.addWidget(btn_select)
+        layout.addWidget(self.file_label)
+        layout.addWidget(self.input)
+        layout.addWidget(format_label)
+        layout.addWidget(self.format_box)
         layout.addWidget(self.progress)
-
-        self.loading_label = QLabel("")
-        layout.addWidget(self.loading_label)
-
-        run_btn = QPushButton("RUN EMBED")
-        run_btn.clicked.connect(self.run_embed)
-        layout.addWidget(run_btn)
-
-        self.result_label = QLabel("")
-        layout.addWidget(self.result_label)
+        layout.addWidget(run)
+        layout.addWidget(self.download_btn)
+        layout.addWidget(self.result)
+        layout.addSpacing(10)
+        layout.addWidget(back)
 
         self.setLayout(layout)
 
     def choose_file(self):
         file, _ = QFileDialog.getOpenFileName(
             self,
-            "Pilih Video",
+            "Select Video",
             "",
             "Video Files (*.avi *.mp4)"
         )
-
         if file:
             self.video_path = file
             self.file_label.setText(os.path.basename(file))
 
     def run_embed(self):
-        if not self.video_path:
-            self.result_label.setText("Pilih video dulu")
+        if not self.video_path or not self.input.text():
+            self.result.setText("Input belum lengkap")
             return
 
-        if not self.input_msg.text():
-            self.result_label.setText("Pesan kosong")
-            return
+        self.output_path = None
+        self.output_format = self.format_box.currentText().lower()
 
-        save_path, selected_filter = QFileDialog.getSaveFileName(
-            self,
-            "Simpan Stego Video",
-            "stego_video.avi",
-            "AVI Video (*.avi);;MP4 Video (*.mp4)"
-        )
-
-        if not save_path:
-            return
-
-        ext = os.path.splitext(save_path)[1]
-
-        if not ext:
-            if "mp4" in selected_filter.lower():
-                save_path += ".mp4"
-            else:
-                save_path += ".avi"
-
+        self.download_btn.setVisible(False)
+        self.progress.setVisible(True)
         self.progress.setValue(0)
-        self.start_loading_animation()
+        self.result.setText("")
+
+        self.start_progress()
 
         self.thread = EmbedWorker(
             self.video_path,
-            self.input_msg.text(),
-            None,
-            None,
-            save_path
+            self.input.text(),
+            self.output_format
         )
-
-        self.thread.finished.connect(self.on_finish)
-        self.thread.error.connect(self.on_error)
-
+        self.thread.finished.connect(self.finish)
+        self.thread.error.connect(self.show_error)
         self.thread.start()
 
-    def start_loading_animation(self):
-        self.dots = 0
+    def start_progress(self):
+        self.val = 0
         self.timer = QTimer()
-        self.timer.timeout.connect(self.update_loading_text)
-        self.timer.start(500)
+        self.timer.timeout.connect(self.update_bar)
+        self.timer.start(80)
 
-    def update_loading_text(self):
-        self.dots = (self.dots + 1) % 4
-        self.loading_label.setText("Processing" + "." * self.dots)
+    def update_bar(self):
+        if self.val < 90:
+            self.val += 1
+            self.progress.setValue(self.val)
 
-    def on_finish(self, result):
+    def finish(self, data):
         self.timer.stop()
         self.progress.setValue(100)
-        self.loading_label.setText("Done")
 
-        format_type = "MP4" if self.thread.output.endswith(".mp4") else "AVI"
+        self.output_path = data["path"]
+        self.output_format = data["format"]
 
-        info = f"""
-Embed berhasil
+        result = data["result"]
 
-Lokasi:
-{self.thread.output}
+        self.result.setText(
+            f"Format: {self.output_format.upper()}\n"
+            f"PSNR: {result['psnr']:.2f}"
+        )
 
-Format: {format_type}
+        self.download_btn.setVisible(True)
 
-PSNR: {result['psnr']:.2f}
-MSE : {result['mse']:.6f}
-"""
+    def save_file(self):
+        if not self.output_path:
+            return
 
-        self.result_label.setText(info)
+        ext = self.output_format
+        default_name = f"stego_output.{ext}"
 
-    def on_error(self, msg):
-        self.timer.stop()
-        self.loading_label.setText("Error")
-        self.result_label.setText(msg)
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save File",
+            default_name,
+            f"{ext.upper()} File (*.{ext})"
+        )
+
+        if not path:
+            return
+
+        if not path.lower().endswith(f".{ext}"):
+            path += f".{ext}"
+
+        shutil.copyfile(self.output_path, path)
+
+        try:
+            os.remove(self.output_path)
+        except:
+            pass
+
+        self.result.setText(f"Saved to:\n{path}")
+
+    def show_error(self, msg):
+        if hasattr(self, "timer"):
+            self.timer.stop()
+        self.progress.setVisible(False)
+        self.result.setText(msg)

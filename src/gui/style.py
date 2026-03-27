@@ -1,27 +1,38 @@
+from PyQt5.QtGui import QFontDatabase, QFont
+import os
+
 STYLE = """
 QWidget {
-    background-color: #121212;
-    color: #00ff9f;
-    font-family: Courier;
-    font-size: 12px;
+    background-color: transparent;
+    color: white;
 }
 
 QPushButton {
-    background-color: #00ff9f;
-    border: 3px solid #00ff9f;
-    padding: 10px;
+    background-color: #333;
+    border: 1px solid #aaa;
+    padding: 6px;
 }
 
 QPushButton:hover {
-    background-color: #00cc7a;
+    background-color: #555;
 }
 
-QProgressBar {
-    border: 2px solid #00ff9f;
-    text-align: center;
-}
-
-QProgressBar::chunk {
-    background-color: #00ff9f;
+QLineEdit {
+    background-color: #222;
+    border: 1px solid #555;
+    padding: 5px;
 }
 """
+
+def load_pixel_font(size=12):
+    base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    font_path = os.path.join(base_path, "assets", "PressStart2P.ttf")
+
+    font_id = QFontDatabase.addApplicationFont(font_path)
+
+    if font_id != -1:
+        families = QFontDatabase.applicationFontFamilies(font_id)
+        if families:
+            return QFont(families[0], size)
+
+    return QFont("Courier", size)

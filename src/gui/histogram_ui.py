@@ -1,34 +1,156 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QFileDialog
+from PyQt5.QtWidgets import (
+    QWidget, QVBoxLayout, QPushButton,
+    QFileDialog, QLabel
+)
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QPixmap
+from gui.style import load_pixel_font
 import cv2
 import matplotlib.pyplot as plt
+import os
+import tempfile
+import shutil
+
 
 class HistogramPage(QWidget):
     def __init__(self, go_back):
         super().__init__()
 
-        layout = QVBoxLayout()
+        self.original_path = ""
+        self.stego_path = ""
 
-        back = QPushButton("⬅ BACK")
+        temp_dir = tempfile.gettempdir()
+        self.image_path = os.path.join(temp_dir, "histogram.png")
+
+        layout = QVBoxLayout()
+        layout.setAlignment(Qt.AlignCenter)
+        layout.setSpacing(10)
+
+        title = QLabel("HISTOGRAM")
+        title.setFont(load_pixel_font(14))
+        title.setAlignment(Qt.AlignCenter)
+
+        btn_original = QPushButton("Select Original Video")
+        btn_original.setFont(load_pixel_font(10))
+        btn_original.clicked.connect(self.choose_original)
+
+        self.label_original = QLabel("No original selected")
+        self.label_original.setAlignment(Qt.AlignCenter)
+
+        btn_stego = QPushButton("Select Stego Video")
+        btn_stego.setFont(load_pixel_font(10))
+        btn_stego.clicked.connect(self.choose_stego)
+
+        self.label_stego = QLabel("No stego selected")
+        self.label_stego.setAlignment(Qt.AlignCenter)
+
+        run = QPushButton("SHOW HISTOGRAM")
+        run.setFont(load_pixel_font(10))
+        run.clicked.connect(self.generate_histogram)
+
+        self.image_label = QLabel()
+        self.image_label.setAlignment(Qt.AlignCenter)
+        self.image_label.setStyleSheet("background-color: white;")
+
+        self.download_btn = QPushButton("DOWNLOAD IMAGE")
+        self.download_btn.setFont(load_pixel_font(10))
+        self.download_btn.setVisible(False)
+        self.download_btn.clicked.connect(self.download_image)
+
+        self.info = QLabel("")
+        self.info.setAlignment(Qt.AlignCenter)
+
+        back = QPushButton("BACK")
+        back.setFont(load_pixel_font(10))
         back.clicked.connect(go_back)
 
-        btn = QPushButton("SHOW HISTOGRAM")
-        btn.clicked.connect(self.show)
-
+        layout.addWidget(title)
+        layout.addWidget(btn_original)
+        layout.addWidget(self.label_original)
+        layout.addWidget(btn_stego)
+        layout.addWidget(self.label_stego)
+        layout.addWidget(run)
+        layout.addWidget(self.image_label)
+        layout.addWidget(self.download_btn)
+        layout.addWidget(self.info)
+        layout.addSpacing(10)
         layout.addWidget(back)
-        layout.addWidget(btn)
 
         self.setLayout(layout)
 
-    def show(self):
-        file, _ = QFileDialog.getOpenFileName()
+    def choose_original(self):
+        file, _ = QFileDialog.getOpenFileName(self, "Select Original Video")
+        if file:
+            self.original_path = file
+            self.label_original.setText(os.path.basename(file))
 
-        cap = cv2.VideoCapture(file)
+    def choose_stego(self):
+        file, _ = QFileDialog.getOpenFileName(self, "Select Stego Video")
+        if file:
+            self.stego_path = file
+            self.label_stego.setText(os.path.basename(file))
+
+    def get_frame(self, path):
+        cap = cv2.VideoCapture(path)
         ret, frame = cap.read()
-
-        colors = ('r','g','b')
-        for i, c in enumerate(colors):
-            hist = cv2.calcHist([frame],[i],None,[256],[0,256])
-            plt.plot(hist, color=c)
-
-        plt.show()
         cap.release()
+        return frame if ret else None
+
+    def plot_hist(self, frame, title):
+        colors = ('r', 'g', 'b')
+        for i, c in enumerate(colors):
+            hist = cv2.calcHist([frame], [i], None, [256], [0, 256])
+            plt.plot(hist, color=c)
+        plt.title(title)
+        plt.xlabel("Pixel Value")
+        plt.ylabel("Frequency")
+
+    def generate_histogram(self):
+        if not self.original_path or not self.stego_path:
+            self.info.setText("Select both videos first")
+            return
+
+        frame_ori = self.get_frame(self.original_path)
+        frame_stego = self.get_frame(self.stego_path)
+
+        if frame_ori is None or frame_stego is None:
+            self.info.setText("Error reading video")
+            return
+
+        plt.figure(figsize=(12, 5))
+
+        plt.subplot(1, 2, 1)
+        self.plot_hist(frame_ori, "Original")
+
+        plt.subplot(1, 2, 2)
+        self.plot_hist(frame_stego, "Stego")
+
+        plt.tight_layout()
+        plt.savefig(self.image_path, bbox_inches='tight')
+        plt.close()
+
+        pixmap = QPixmap(self.image_path)
+        self.image_label.setPixmap(pixmap)
+        self.image_label.setScaledContents(True)
+        self.image_label.setMaximumHeight(400)
+
+        self.download_btn.setVisible(True)
+        self.info.setText("Histogram generated")
+
+    def download_image(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Histogram",
+            "histogram.png",
+            "PNG Image (*.png)"
+        )
+
+        if not path:
+            return
+
+        if not path.endswith(".png"):
+            path += ".png"
+
+        shutil.copy(self.image_path, path)
+
+        self.info.setText(f"Saved to:\n{path}")
