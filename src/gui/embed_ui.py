@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QLineEdit,
-    QLabel, QFileDialog, QProgressBar, QComboBox
+    QLabel, QFileDialog, QProgressBar, QComboBox, QHBoxLayout
 )
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer, Qt
 from gui.style import load_pixel_font
@@ -14,11 +14,12 @@ class EmbedWorker(QThread):
     finished = pyqtSignal(dict)
     error = pyqtSignal(str)
 
-    def __init__(self, video, msg, output_format):
+    def __init__(self, video, payload, output_format, is_file=False):
         super().__init__()
         self.video = video
-        self.msg = msg
+        self.payload = payload
         self.output_format = output_format.lower()
+        self.is_file = is_file
 
         temp_dir = tempfile.gettempdir()
         self.temp_output = os.path.join(temp_dir, f"temp_stego.{self.output_format}")
@@ -27,13 +28,13 @@ class EmbedWorker(QThread):
         try:
             obj = StegoEmbed(
                 self.video,
-                self.msg,
+                self.payload,
                 None,
                 None,
                 self.temp_output
             )
 
-            result = obj.run_embedding()
+            result = obj.run_embedding(is_file=self.is_file)
 
             self.finished.emit({
                 "result": result,
@@ -50,8 +51,10 @@ class EmbedPage(QWidget):
         super().__init__()
 
         self.video_path = ""
+        self.file_path = None
         self.output_path = None
         self.output_format = "avi"
+        self.mode = "TEXT"
 
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignCenter)
@@ -63,10 +66,25 @@ class EmbedPage(QWidget):
 
         btn_select = QPushButton("Select Video")
         btn_select.setFont(load_pixel_font(10))
-        btn_select.clicked.connect(self.choose_file)
+        btn_select.clicked.connect(self.choose_video)
 
         self.file_label = QLabel("No file")
         self.file_label.setAlignment(Qt.AlignCenter)
+
+        self.btn_text = QPushButton("TEXT")
+        self.btn_file = QPushButton("FILE")
+
+        for b in [self.btn_text, self.btn_file]:
+            b.setFont(load_pixel_font(10))
+            b.setFixedWidth(120)
+
+        self.btn_text.clicked.connect(lambda: self.set_mode("TEXT"))
+        self.btn_file.clicked.connect(lambda: self.set_mode("FILE"))
+
+        mode_layout = QHBoxLayout()
+        mode_layout.setAlignment(Qt.AlignCenter)
+        mode_layout.addWidget(self.btn_text)
+        mode_layout.addWidget(self.btn_file)
 
         self.input = QLineEdit()
         self.input.setPlaceholderText("Message")
@@ -79,6 +97,15 @@ class EmbedPage(QWidget):
         }
         """)
 
+        self.file_btn = QPushButton("Select File")
+        self.file_btn.setFont(load_pixel_font(10))
+        self.file_btn.clicked.connect(self.choose_payload)
+        self.file_btn.setVisible(False)
+
+        self.payload_label = QLabel("")
+        self.payload_label.setAlignment(Qt.AlignCenter)
+        self.payload_label.setVisible(False)
+
         format_label = QLabel("Output Format")
         format_label.setFont(load_pixel_font(8))
         format_label.setAlignment(Qt.AlignCenter)
@@ -86,20 +113,6 @@ class EmbedPage(QWidget):
         self.format_box = QComboBox()
         self.format_box.addItems(["AVI", "MP4"])
         self.format_box.setCurrentText("AVI")
-        self.format_box.setStyleSheet("""
-        QComboBox {
-            background-color: white;
-            color: black;
-            border: 1px solid black;
-            padding: 4px;
-        }
-        QComboBox QAbstractItemView {
-            background-color: white;
-            color: black;
-            selection-background-color: #dcdcdc;
-            selection-color: black;
-        }
-        """)
 
         self.progress = QProgressBar()
         self.progress.setVisible(False)
@@ -123,7 +136,10 @@ class EmbedPage(QWidget):
         layout.addWidget(title)
         layout.addWidget(btn_select)
         layout.addWidget(self.file_label)
+        layout.addLayout(mode_layout)
         layout.addWidget(self.input)
+        layout.addWidget(self.file_btn)
+        layout.addWidget(self.payload_label)
         layout.addWidget(format_label)
         layout.addWidget(self.format_box)
         layout.addWidget(self.progress)
@@ -135,7 +151,27 @@ class EmbedPage(QWidget):
 
         self.setLayout(layout)
 
-    def choose_file(self):
+        self.set_mode("TEXT")
+
+    def set_mode(self, mode):
+        self.mode = mode
+
+        if mode == "TEXT":
+            self.input.setVisible(True)
+            self.file_btn.setVisible(False)
+            self.payload_label.setVisible(False)
+
+            self.btn_text.setStyleSheet("background-color: white; color: black;")
+            self.btn_file.setStyleSheet("")
+        else:
+            self.input.setVisible(False)
+            self.file_btn.setVisible(True)
+            self.payload_label.setVisible(True)
+
+            self.btn_file.setStyleSheet("background-color: white; color: black;")
+            self.btn_text.setStyleSheet("")
+
+    def choose_video(self):
         file, _ = QFileDialog.getOpenFileName(
             self,
             "Select Video",
@@ -146,12 +182,32 @@ class EmbedPage(QWidget):
             self.video_path = file
             self.file_label.setText(os.path.basename(file))
 
+    def choose_payload(self):
+        file, _ = QFileDialog.getOpenFileName(self, "Select File")
+        if file:
+            self.file_path = file
+            self.payload_label.setText(os.path.basename(file))
+
     def run_embed(self):
-        if not self.video_path or not self.input.text():
-            self.result.setText("Input belum lengkap")
+        if not self.video_path:
+            self.result.setText("Select video first")
             return
 
-        self.output_path = None
+        payload = None
+        is_file = False
+
+        if self.mode == "TEXT":
+            if not self.input.text():
+                self.result.setText("Enter message")
+                return
+            payload = self.input.text()
+        else:
+            if not self.file_path:
+                self.result.setText("Select file")
+                return
+            payload = self.file_path
+            is_file = True
+
         self.output_format = self.format_box.currentText().lower()
 
         self.download_btn.setVisible(False)
@@ -163,8 +219,9 @@ class EmbedPage(QWidget):
 
         self.thread = EmbedWorker(
             self.video_path,
-            self.input.text(),
-            self.output_format
+            payload,
+            self.output_format,
+            is_file
         )
         self.thread.finished.connect(self.finish)
         self.thread.error.connect(self.show_error)
