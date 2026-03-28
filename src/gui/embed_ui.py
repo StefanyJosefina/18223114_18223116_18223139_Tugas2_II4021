@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QLineEdit,
-    QLabel, QFileDialog, QProgressBar, QComboBox, QHBoxLayout
+    QLabel, QFileDialog, QProgressBar, QComboBox, QHBoxLayout, QCheckBox
 )
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer, Qt
 from gui.style import load_pixel_font
@@ -9,17 +9,22 @@ import os
 import shutil
 import tempfile
 
-
 class EmbedWorker(QThread):
     finished = pyqtSignal(dict)
     error = pyqtSignal(str)
 
-    def __init__(self, video, payload, output_format, is_file=False):
+    def __init__(self, video, payload, output_format, is_file=False, a51_key=None, stego_key=None, lsb_scheme=1, encrypt=False, use_random=False):
         super().__init__()
         self.video = video
         self.payload = payload
         self.output_format = output_format.lower()
         self.is_file = is_file
+        
+        self.a51_key = a51_key
+        self.stego_key = stego_key
+        self.lsb_scheme = lsb_scheme
+        self.encrypt = encrypt
+        self.use_random = use_random
 
         temp_dir = tempfile.gettempdir()
         self.temp_output = os.path.join(temp_dir, f"temp_stego.{self.output_format}")
@@ -27,14 +32,19 @@ class EmbedWorker(QThread):
     def run(self):
         try:
             obj = StegoEmbed(
-                self.video,
-                self.payload,
-                None,
-                None,
-                self.temp_output
+                video_path=self.video,
+                secret_msg=self.payload,
+                a51_key=self.a51_key,
+                stego_key=self.stego_key,
+                output_path=self.temp_output,
+                lsb_scheme=self.lsb_scheme
             )
 
-            result = obj.run_embedding(is_file=self.is_file)
+            result = obj.run_embedding(
+                is_file=self.is_file,
+                encrypt=self.encrypt,
+                use_random=self.use_random
+            )
 
             self.finished.emit({
                 "result": result,
@@ -106,13 +116,42 @@ class EmbedPage(QWidget):
         self.payload_label.setAlignment(Qt.AlignCenter)
         self.payload_label.setVisible(False)
 
-        format_label = QLabel("Output Format")
-        format_label.setFont(load_pixel_font(8))
-        format_label.setAlignment(Qt.AlignCenter)
+        # 1. Pilihan LSB Scheme
+        scheme_layout = QHBoxLayout()
+        scheme_label = QLabel("LSB Scheme:")
+        scheme_label.setFont(load_pixel_font(8))
+        self.scheme_box = QComboBox()
+        self.scheme_box.addItems(["3-3-2", "2-3-3", "4-2-2"])
+        scheme_layout.addWidget(scheme_label)
+        scheme_layout.addWidget(self.scheme_box)
 
+        # 2. Checkbox & Input Enkripsi A5/1
+        self.cb_encrypt = QCheckBox("Encrypt (A5/1)")
+        self.cb_encrypt.setFont(load_pixel_font(8))
+        self.input_a51 = QLineEdit()
+        self.input_a51.setPlaceholderText("Enter A5/1 Key")
+        self.input_a51.setEchoMode(QLineEdit.Password)
+        self.input_a51.setEnabled(False) # Nonaktif sampai checkbox dicentang
+        self.cb_encrypt.toggled.connect(self.input_a51.setEnabled)
+
+        # 3. Checkbox & Input Stego Key (Random)
+        self.cb_random = QCheckBox("Randomize (Stego-key)")
+        self.cb_random.setFont(load_pixel_font(8))
+        self.input_stego = QLineEdit()
+        self.input_stego.setPlaceholderText("Enter Stego-key")
+        self.input_stego.setEchoMode(QLineEdit.Password)
+        self.input_stego.setEnabled(False) # Nonaktif sampai checkbox dicentang
+        self.cb_random.toggled.connect(self.input_stego.setEnabled)
+
+        # Output Format
+        format_layout = QHBoxLayout()
+        format_label = QLabel("Output Format:")
+        format_label.setFont(load_pixel_font(8))
         self.format_box = QComboBox()
         self.format_box.addItems(["AVI", "MP4"])
         self.format_box.setCurrentText("AVI")
+        format_layout.addWidget(format_label)
+        format_layout.addWidget(self.format_box)
 
         self.progress = QProgressBar()
         self.progress.setVisible(False)
@@ -140,8 +179,14 @@ class EmbedPage(QWidget):
         layout.addWidget(self.input)
         layout.addWidget(self.file_btn)
         layout.addWidget(self.payload_label)
-        layout.addWidget(format_label)
-        layout.addWidget(self.format_box)
+        
+        layout.addLayout(scheme_layout)
+        layout.addWidget(self.cb_encrypt)
+        layout.addWidget(self.input_a51)
+        layout.addWidget(self.cb_random)
+        layout.addWidget(self.input_stego)
+        layout.addLayout(format_layout)
+        
         layout.addWidget(self.progress)
         layout.addWidget(run)
         layout.addWidget(self.download_btn)
@@ -150,7 +195,6 @@ class EmbedPage(QWidget):
         layout.addWidget(back)
 
         self.setLayout(layout)
-
         self.set_mode("TEXT")
 
     def set_mode(self, mode):
@@ -160,14 +204,12 @@ class EmbedPage(QWidget):
             self.input.setVisible(True)
             self.file_btn.setVisible(False)
             self.payload_label.setVisible(False)
-
             self.btn_text.setStyleSheet("background-color: white; color: black;")
             self.btn_file.setStyleSheet("")
         else:
             self.input.setVisible(False)
             self.file_btn.setVisible(True)
             self.payload_label.setVisible(True)
-
             self.btn_file.setStyleSheet("background-color: white; color: black;")
             self.btn_text.setStyleSheet("")
 
@@ -208,6 +250,25 @@ class EmbedPage(QWidget):
             payload = self.file_path
             is_file = True
 
+        encrypt = self.cb_encrypt.isChecked()
+        use_random = self.cb_random.isChecked()
+        
+        a51_key = self.input_a51.text() if encrypt else None
+        stego_key = self.input_stego.text() if use_random else None
+
+        if encrypt and not a51_key:
+            self.result.setText("A5/1 Key is required!")
+            return
+            
+        if use_random and not stego_key:
+            self.result.setText("Stego Key is required!")
+            return
+            
+        scheme_text = self.scheme_box.currentText()
+        if scheme_text == "3-3-2": lsb_scheme = 1
+        elif scheme_text == "2-3-3": lsb_scheme = 2
+        elif scheme_text == "4-2-2": lsb_scheme = 3
+
         self.output_format = self.format_box.currentText().lower()
 
         self.download_btn.setVisible(False)
@@ -218,10 +279,15 @@ class EmbedPage(QWidget):
         self.start_progress()
 
         self.thread = EmbedWorker(
-            self.video_path,
-            payload,
-            self.output_format,
-            is_file
+            video=self.video_path,
+            payload=payload,
+            output_format=self.output_format,
+            is_file=is_file,
+            a51_key=a51_key,
+            stego_key=stego_key,
+            lsb_scheme=lsb_scheme,
+            encrypt=encrypt,
+            use_random=use_random
         )
         self.thread.finished.connect(self.finish)
         self.thread.error.connect(self.show_error)

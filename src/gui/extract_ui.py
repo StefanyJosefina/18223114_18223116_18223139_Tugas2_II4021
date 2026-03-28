@@ -1,12 +1,37 @@
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QPushButton,
-    QLabel, QFileDialog, QProgressBar, QTextEdit
+    QWidget, QVBoxLayout, QPushButton, QLineEdit,
+    QLabel, QFileDialog, QProgressBar, QTextEdit, QCheckBox
 )
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from gui.style import load_pixel_font
 from extract import StegoExtract
 import os
+import shutil
+import tempfile
 
+class ExtractWorker(QThread):
+    finished = pyqtSignal(dict)
+    error = pyqtSignal(str)
+
+    def __init__(self, video_path, a51_key=None, stego_key=None, output_dir=None):
+        super().__init__()
+        self.video_path = video_path
+        self.a51_key = a51_key
+        self.stego_key = stego_key
+        self.output_dir = output_dir
+
+    def run(self):
+        try:
+            obj = StegoExtract(
+                video_path=self.video_path,
+                a51_key=self.a51_key,
+                stego_key=self.stego_key,
+                output_dir=self.output_dir
+            )
+            res = obj.extraction()
+            self.finished.emit(res)
+        except Exception as e:
+            self.error.emit(str(e))
 
 class ExtractPage(QWidget):
     def __init__(self, go_back):
@@ -29,6 +54,22 @@ class ExtractPage(QWidget):
 
         self.file_label = QLabel("No file")
         self.file_label.setAlignment(Qt.AlignCenter)
+
+        self.cb_encrypt = QCheckBox("Has A5/1 Encryption")
+        self.cb_encrypt.setFont(load_pixel_font(8))
+        self.input_a51 = QLineEdit()
+        self.input_a51.setPlaceholderText("Enter A5/1 Key")
+        self.input_a51.setEchoMode(QLineEdit.Password)
+        self.input_a51.setEnabled(False)
+        self.cb_encrypt.toggled.connect(self.input_a51.setEnabled)
+
+        self.cb_random = QCheckBox("Has Stego-key (Randomized)")
+        self.cb_random.setFont(load_pixel_font(8))
+        self.input_stego = QLineEdit()
+        self.input_stego.setPlaceholderText("Enter Stego-key")
+        self.input_stego.setEchoMode(QLineEdit.Password)
+        self.input_stego.setEnabled(False)
+        self.cb_random.toggled.connect(self.input_stego.setEnabled)
 
         self.progress = QProgressBar()
         self.progress.setVisible(False)
@@ -65,6 +106,12 @@ class ExtractPage(QWidget):
         layout.addWidget(title)
         layout.addWidget(btn_select)
         layout.addWidget(self.file_label)
+        
+        layout.addWidget(self.cb_encrypt)
+        layout.addWidget(self.input_a51)
+        layout.addWidget(self.cb_random)
+        layout.addWidget(self.input_stego)
+        
         layout.addWidget(self.progress)
         layout.addWidget(run)
         layout.addWidget(self.result_title)
@@ -76,7 +123,12 @@ class ExtractPage(QWidget):
         self.setLayout(layout)
 
     def choose_file(self):
-        file, _ = QFileDialog.getOpenFileName(self, "Select Video")
+        file, _ = QFileDialog.getOpenFileName(
+            self, 
+            "Select Video",
+            "",
+            "Video Files (*.avi *.mp4)"
+        )
         if file:
             self.video_path = file
             self.file_label.setText(os.path.basename(file))
@@ -92,8 +144,22 @@ class ExtractPage(QWidget):
         self.result_title.setText("")
         self.download_btn.setVisible(False)
 
+        a51_key = self.input_a51.text() if self.cb_encrypt.isChecked() else None
+        stego_key = self.input_stego.text() if self.cb_random.isChecked() else None
+
+        temp_dir = tempfile.gettempdir()
+
         self.start_progress()
-        QTimer.singleShot(10, self.finish_extract)
+
+        self.thread = ExtractWorker(
+            video_path=self.video_path,
+            a51_key=a51_key,
+            stego_key=stego_key,
+            output_dir=temp_dir
+        )
+        self.thread.finished.connect(self.finish_extract)
+        self.thread.error.connect(self.show_error)
+        self.thread.start()
 
     def start_progress(self):
         self.val = 0
@@ -106,66 +172,53 @@ class ExtractPage(QWidget):
             self.val += 1
             self.progress.setValue(self.val)
 
-    def finish_extract(self):
-        try:
-            import glob
-            import shutil
-            import tempfile
+    def finish_extract(self, res):
+        self.timer.stop()
+        self.progress.setValue(100)
 
-            before_files = set(glob.glob("*"))
+        data_type = res.get("type", "").lower()
 
-            obj = StegoExtract(self.video_path)
-            res = obj.extraction()
+        if data_type in ["text", "teks"]:
+            self.result_title.setText("HIDDEN MESSAGE")
+            self.result_box.setText(res.get("data", ""))
+            self.adjust_textbox_height()
 
+        else:
+            self.result_title.setText("FILE EXTRACTED")
+            self.result_box.setText("Click download to save the extracted file")
+            
+            self.extracted_file_path = res.get("filepath")
+            self.download_btn.setVisible(True)
+            self.adjust_textbox_height()
+
+    def show_error(self, msg):
+        if hasattr(self, "timer"):
             self.timer.stop()
-            self.progress.setValue(100)
-
-            after_files = set(glob.glob("*"))
-            new_files = list(after_files - before_files)
-
-            data_type = res.get("type", "").lower()
-
-            if data_type in ["text", "teks"]:
-                self.result_title.setText("HIDDEN MESSAGE")
-                self.result_box.setText(res.get("data", ""))
-                self.adjust_textbox_height()
-
-            else:
-                self.result_title.setText("FILE EXTRACTED")
-                self.result_box.setText("Click download to save the extracted file")
-
-                if new_files:
-                    created_file = new_files[0]
-
-                    temp_dir = tempfile.gettempdir()
-                    temp_path = os.path.join(temp_dir, os.path.basename(created_file))
-
-                    shutil.move(created_file, temp_path)
-
-                    self.extracted_file_path = temp_path
-                    self.download_btn.setVisible(True)
-
-                self.adjust_textbox_height()
-
-        except Exception as e:
-            self.timer.stop()
-            self.result_box.setText(str(e))
+        self.progress.setVisible(False)
+        self.result_box.setText(f"Error: {msg}")
+        self.result_title.setText("EXTRACTION FAILED")
 
     def save_file(self):
         if not self.extracted_file_path:
             return
 
+        default_name = os.path.basename(self.extracted_file_path)
+        ext = os.path.splitext(default_name)[1]
+
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Save File",
-            os.path.basename(self.extracted_file_path)
+            default_name,
+            f"Extracted File (*{ext})"
         )
 
         if not path:
             return
 
-        import shutil
-        shutil.copy(self.extracted_file_path, path)
+        shutil.move(self.extracted_file_path, path)
+        
+        self.extracted_file_path = None
+        self.download_btn.setVisible(False)
 
         self.result_box.setText(f"Saved to:\n{path}")
 
