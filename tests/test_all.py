@@ -47,13 +47,14 @@ embedder = StegoEmbed(
     secret_msg=message,
     a51_key="kunci123",
     stego_key="randomkey",
-    output_path=stego_path
+    output_path=stego_path,
+    lsb_scheme=2 # Bisa memilih antara 1, 2, atau 3 sesuai dengan skema LSB yang diinginkan
 )
 
 result_embed = embedder.run_embedding(
     is_file=False,
-    encrypt=True,
-    use_random=True
+    encrypt=True, # True untuk mengenkripsi pesan, False untuk tidak menggunakan enkripsi
+    use_random=True # True untuk menggunakan penyisipan acak, False untuk penyisipan sequential
 )
 
 print("Embed Result:", result_embed, "\n")
