@@ -15,12 +15,28 @@ class StegoExtract:
     def get_seed(self, key_str):
         return int(hashlib.sha256(key_str.encode('utf-8')).hexdigest(), 16)
 
-    def extract_rgb(self, pixel):
+    def extract_rgb(self, pixel, lsb_scheme):
         r, g, b = int(pixel[0]), int(pixel[1]), int(pixel[2])
-        r_bits = r & 0b00000111
-        g_bits = g & 0b00000111
-        b_bits = b & 0b00000011
-        return (r_bits << 5) | (g_bits << 2) | b_bits
+        
+        if lsb_scheme == 1: # Skema 3-3-2
+            r_bits = r & 0b111
+            g_bits = g & 0b111
+            b_bits = b & 0b11
+            return (r_bits << 5) | (g_bits << 2) | b_bits
+
+        elif lsb_scheme == 2: # Skema 2-3-3
+            r_bits = r & 0b11
+            g_bits = g & 0b111
+            b_bits = b & 0b111
+            return (r_bits << 6) | (g_bits << 3) | b_bits
+
+        elif lsb_scheme == 3: # Skema 4-2-2
+            r_bits = r & 0b1111
+            g_bits = g & 0b11
+            b_bits = b & 0b11
+            return (r_bits << 4) | (g_bits << 2) | b_bits
+            
+        return 0
 
     def get_metadata(self, frame):
         extract_bytes = bytearray()
@@ -29,7 +45,7 @@ class StegoExtract:
 
         for y in range(height):
             for x in range(width):
-                byte_val = self.extract_rgb(frame[y, x])
+                byte_val = self.extract_rgb(frame[y, x], lsb_scheme=1)
                 extract_bytes.append(byte_val)
 
                 if len(extract_bytes) >= 2 and extract_bytes[-2:] == end:
@@ -43,7 +59,8 @@ class StegoExtract:
                             "filename": parts[3],
                             "is_encrypted": bool(int(parts[4])),
                             "is_random": bool(int(parts[5])),
-                            "capacity": int(parts[6])
+                            "capacity": int(parts[6]),
+                            "lsb_scheme": int(parts[7])
                         }
                     except Exception:
                         raise ValueError("Metadata format is corrupted")
@@ -70,6 +87,7 @@ class StegoExtract:
 
             meta = self.get_metadata(frame0)
             target_bytes = meta['byte_size']
+            payload_lsb_scheme = meta['lsb_scheme']
 
             if meta['is_random']:
                 if not self.stego_key:
@@ -100,7 +118,7 @@ class StegoExtract:
                 
                 if current_frame in frame_targets:
                     for (y, x, byte_order) in frame_targets[current_frame]:
-                        extracted_data[byte_order] = self.extract_rgb(frame[y, x])
+                        extracted_data[byte_order] = self.extract_rgb(frame[y, x], lsb_scheme=payload_lsb_scheme)
                 
                 current_frame += 1
                 if current_frame >= total_frames:

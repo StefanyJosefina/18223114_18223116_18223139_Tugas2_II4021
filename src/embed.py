@@ -8,12 +8,13 @@ import imageio
 from a51 import A51
 
 class StegoEmbed:
-    def __init__(self, video_path, secret_msg, a51_key=None, stego_key=None, output_path="stego_video.avi"):
+    def __init__(self, video_path, secret_msg, a51_key=None, stego_key=None, output_path="stego_video.avi", lsb_scheme=1):
         self.video_path = video_path
         self.secret_msg = secret_msg
         self.a51_key = a51_key
         self.stego_key = stego_key
         self.output_path = output_path
+        self.lsb_scheme = lsb_scheme
 
     def get_seed(self, key_str):
         return int(hashlib.sha256(key_str.encode('utf-8')).hexdigest(), 16)
@@ -36,16 +37,35 @@ class StegoEmbed:
         cipher = A51(self.a51_key)
         return cipher.decrypt(data_bytes)
     
-    def embed_rgb(self, pixel, message_byte):
+    def embed_rgb(self, pixel, message_byte, lsb_scheme):
         r, g, b = int(pixel[0]), int(pixel[1]), int(pixel[2])
 
-        r_msg = (message_byte >> 5) & 0b111
-        g_msg = (message_byte >> 2) & 0b111
-        b_msg = message_byte & 0b11
+        if lsb_scheme == 1: # Skema 3-3-2
+            r_msg = (message_byte >> 5) & 0b111
+            g_msg = (message_byte >> 2) & 0b111
+            b_msg = message_byte & 0b11
+            new_r = (r & 0b11111000) | r_msg
+            new_g = (g & 0b11111000) | g_msg
+            new_b = (b & 0b11111100) | b_msg
 
-        new_r = (r & 0b11111000) | r_msg
-        new_g = (g & 0b11111000) | g_msg
-        new_b = (b & 0b11111100) | b_msg
+        elif lsb_scheme == 2: # Skema 2-3-3
+            r_msg = (message_byte >> 6) & 0b11
+            g_msg = (message_byte >> 3) & 0b111
+            b_msg = message_byte & 0b111
+            new_r = (r & 0b11111100) | r_msg
+            new_g = (g & 0b11111000) | g_msg
+            new_b = (b & 0b11111000) | b_msg
+
+        elif lsb_scheme == 3: # Skema 4-2-2
+            r_msg = (message_byte >> 4) & 0b1111
+            g_msg = (message_byte >> 2) & 0b11
+            b_msg = message_byte & 0b11
+            new_r = (r & 0b11110000) | r_msg
+            new_g = (g & 0b11111100) | g_msg
+            new_b = (b & 0b11111100) | b_msg
+            
+        else:
+            raise ValueError("Skema LSB tidak valid!")
 
         return np.array([new_r, new_g, new_b], dtype=np.uint8)
     
@@ -93,7 +113,7 @@ class StegoEmbed:
             fourcc = cv2.VideoWriter_fourcc(*'FFV1')
             out = cv2.VideoWriter(self.output_path, fourcc, fps, (w, h))
 
-        meta_str = f"{msg_type};{ext};{len(payload)};{filename};{int(encrypt)};{int(use_random)};{total_pixels}||"
+        meta_str = f"{msg_type};{ext};{len(payload)};{filename};{int(encrypt)};{int(use_random)};{total_pixels};{self.lsb_scheme}||"
         meta_bytes = meta_str.encode('utf-8')
 
         ret, frame = cap.read()
@@ -103,7 +123,7 @@ class StegoEmbed:
         for y in range(h):
             for x in range(w):
                 if idx < len(meta_bytes):
-                    frame[y, x] = self.embed_rgb(frame[y, x], meta_bytes[idx])
+                    frame[y, x] = self.embed_rgb(frame[y, x], meta_bytes[idx], lsb_scheme=1)
                     idx += 1
 
         if is_mp4:
@@ -135,7 +155,7 @@ class StegoEmbed:
             original_frame = frame.copy()
             if current_f in payload_map:
                 for (y, x, b_idx) in payload_map[current_f]:
-                    frame[y, x] = self.embed_rgb(frame[y, x], payload[b_idx])
+                    frame[y, x] = self.embed_rgb(frame[y, x], payload[b_idx], lsb_scheme=self.lsb_scheme)
 
                 mse, psnr = self.calculate_metrics(original_frame, frame)
                 total_mse += mse
