@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer, Qt
 from gui.style import load_pixel_font
 from embed import StegoEmbed
+import cv2
 import os
 import shutil
 import tempfile
@@ -80,6 +81,11 @@ class EmbedPage(QWidget):
 
         self.file_label = QLabel("No file")
         self.file_label.setAlignment(Qt.AlignCenter)
+
+        self.capacity_label = QLabel("")
+        self.capacity_label.setFont(load_pixel_font(8))
+        self.capacity_label.setAlignment(Qt.AlignCenter)
+        self.capacity_label.setStyleSheet("color: #FFFFFF;")
 
         self.btn_text = QPushButton("TEXT")
         self.btn_file = QPushButton("FILE")
@@ -175,6 +181,7 @@ class EmbedPage(QWidget):
         layout.addWidget(title)
         layout.addWidget(btn_select)
         layout.addWidget(self.file_label)
+        layout.addWidget(self.capacity_label)
         layout.addLayout(mode_layout)
         layout.addWidget(self.input)
         layout.addWidget(self.file_btn)
@@ -223,6 +230,29 @@ class EmbedPage(QWidget):
         if file:
             self.video_path = file
             self.file_label.setText(os.path.basename(file))
+
+            cap = cv2.VideoCapture(file)
+            if cap.isOpened():
+                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                cap.release()
+                
+                if total_frames > 1:
+                    max_bytes = (total_frames - 1) * w * h
+                    
+                    if max_bytes >= 1024 * 1024:
+                        size_str = f"{max_bytes / (1024 * 1024):.2f} MB"
+                    elif max_bytes >= 1024:
+                        size_str = f"{max_bytes / 1024:.2f} KB"
+                    else:
+                        size_str = f"{max_bytes} Bytes"
+                        
+                    self.capacity_label.setText(f"Capacity: {max_bytes} bytes ({size_str})")
+                else:
+                    self.capacity_label.setText("Capacity: 0 bytes (Invalid/Too short)")
+            else:
+                self.capacity_label.setText("Error reading video")
 
     def choose_payload(self):
         file, _ = QFileDialog.getOpenFileName(self, "Select File")

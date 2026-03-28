@@ -71,8 +71,10 @@ class StegoEmbed:
     
     def run_embedding(self, is_file=False, encrypt=False, use_random=False):
         if is_file:
-            filename = os.path.basename(self.secret_msg)
-            ext = os.path.splitext(filename)[1]
+            basename = os.path.basename(self.secret_msg)
+            filename = os.path.splitext(basename)[0] 
+            ext = os.path.splitext(basename)[1]
+            
             with open(self.secret_msg, 'rb') as f:
                 payload = bytearray(f.read())
             msg_type = "file"
