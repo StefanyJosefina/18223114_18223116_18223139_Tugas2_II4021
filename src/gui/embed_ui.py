@@ -247,9 +247,13 @@ class EmbedPage(QWidget):
 
         result = data["result"]
 
+        psnr = result.get("psnr", 0)
+        mse = result.get("mse", 0)
+
         self.result.setText(
             f"Format: {self.output_format.upper()}\n"
-            f"PSNR: {result['psnr']:.2f}"
+            f"MSE: {mse:.6f}\n"
+            f"PSNR: {psnr:.2f} dB\n"
         )
 
         self.download_btn.setVisible(True)

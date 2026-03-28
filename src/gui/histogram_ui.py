@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import os
 import tempfile
 import shutil
+import numpy as np
 
 
 class HistogramPage(QWidget):
@@ -105,6 +106,23 @@ class HistogramPage(QWidget):
         plt.xlabel("Pixel Value")
         plt.ylabel("Frequency")
 
+    def calculate_metrics(self, img1, img2):
+        mse = np.mean((img1.astype(np.float64) - img2.astype(np.float64)) ** 2)
+
+        if mse == 0:
+            psnr = 100
+        else:
+            psnr = 10 * np.log10((255 ** 2) / mse)
+
+        if psnr > 40:
+            quality = "Excellent"
+        elif psnr > 30:
+            quality = "Good"
+        else:
+            quality = "Low"
+
+        return mse, psnr, quality
+
     def generate_histogram(self):
         if not self.original_path or not self.stego_path:
             self.info.setText("Select both videos first")
@@ -134,8 +152,15 @@ class HistogramPage(QWidget):
         self.image_label.setScaledContents(True)
         self.image_label.setMaximumHeight(400)
 
+        mse, psnr, quality = self.calculate_metrics(frame_ori, frame_stego)
+
         self.download_btn.setVisible(True)
-        self.info.setText("Histogram generated")
+
+        self.info.setText(
+            f"MSE: {mse:.4f}\n"
+            f"PSNR: {psnr:.2f} dB\n"
+            f"Quality: {quality}"
+        )
 
     def download_image(self):
         path, _ = QFileDialog.getSaveFileName(
