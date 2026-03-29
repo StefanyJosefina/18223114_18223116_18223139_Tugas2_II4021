@@ -84,11 +84,6 @@ class StegoEmbed:
             ext = ".txt"
             msg_type = "text"
 
-        if encrypt:
-            if not self.a51_key:
-                raise ValueError("Kunci A5/1 wajib diisi!")
-            payload = self.a51_encrypt(payload)
-
         cap = cv2.VideoCapture(self.video_path)
         fps = cap.get(cv2.CAP_PROP_FPS)
 
@@ -101,6 +96,13 @@ class StegoEmbed:
         if len(payload) > total_pixels:
             cap.release()
             raise ValueError(f"Pesan terlalu besar! Kapasitas maksimum: {total_pixels} bytes.")
+        
+        if encrypt:
+            if not self.a51_key:
+                cap.release()
+                raise ValueError("Kunci A5/1 wajib diisi!")
+            payload = self.a51_encrypt(payload)
+
         
         is_mp4 = self.output_path.lower().endswith('.mp4')
 
