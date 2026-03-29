@@ -71,7 +71,7 @@ class StegoExtract:
         cipher = A51(self.a51_key)
         return cipher.decrypt(ciphertext_bytes)
 
-    def extraction(self):
+    def extraction(self, progress_callback=None):
         if not os.path.exists(self.video_path):
             raise FileNotFoundError(f"'{self.video_path}' not found")
 
@@ -119,6 +119,10 @@ class StegoExtract:
                 if current_frame in frame_targets:
                     for (y, x, byte_order) in frame_targets[current_frame]:
                         extracted_data[byte_order] = self.extract_rgb(frame[y, x], lsb_scheme=payload_lsb_scheme)
+
+                if progress_callback and total_frames > 0:
+                    progress_percent = int((current_frame / total_frames) * 100)
+                    progress_callback(progress_percent)
                 
                 current_frame += 1
                 if current_frame >= total_frames:

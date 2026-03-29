@@ -36,6 +36,7 @@ class HistogramPage(QWidget):
         btn_original.clicked.connect(self.choose_original)
 
         self.label_original = QLabel("No original selected")
+        self.label_original.setFont(load_pixel_font(8))
         self.label_original.setAlignment(Qt.AlignCenter)
 
         btn_stego = QPushButton("Select Stego Video")
@@ -43,6 +44,7 @@ class HistogramPage(QWidget):
         btn_stego.clicked.connect(self.choose_stego)
 
         self.label_stego = QLabel("No stego selected")
+        self.label_stego.setFont(load_pixel_font(8))
         self.label_stego.setAlignment(Qt.AlignCenter)
 
         run = QPushButton("SHOW HISTOGRAM")
@@ -161,6 +163,7 @@ class HistogramPage(QWidget):
             f"PSNR: {psnr:.2f} dB\n"
             f"Quality: {quality}"
         )
+        self.info.setFont(load_pixel_font(8))
 
     def download_image(self):
         path, _ = QFileDialog.getSaveFileName(

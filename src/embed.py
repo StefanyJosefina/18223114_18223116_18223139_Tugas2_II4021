@@ -69,7 +69,7 @@ class StegoEmbed:
 
         return np.array([new_r, new_g, new_b], dtype=np.uint8)
     
-    def run_embedding(self, is_file=False, encrypt=False, use_random=False):
+    def run_embedding(self, is_file=False, encrypt=False, use_random=False, progress_callback=None):
         if is_file:
             basename = os.path.basename(self.secret_msg)
             filename = os.path.splitext(basename)[0] 
@@ -109,6 +109,7 @@ class StegoEmbed:
                 self.output_path, 
                 fps=fps, 
                 codec='libx264rgb', 
+                macro_block_size=1,
                 ffmpeg_params=['-crf', '0', '-loglevel', 'error']
             )
         else:
@@ -168,6 +169,10 @@ class StegoEmbed:
                 writer.append_data(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             else:
                 out.write(frame)
+
+            if progress_callback and total_frames > 0:
+                progress_percent = int((current_f / total_frames) * 100)
+                progress_callback(progress_percent)
                 
             current_f += 1
 

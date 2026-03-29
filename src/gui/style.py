@@ -22,6 +22,19 @@ QLineEdit {
     border: 1px solid #555;
     padding: 5px;
 }
+
+QComboBox {
+    background-color: #222;
+    color: white;
+    border: 1px solid #555;
+    padding: 5px;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #222;
+    color: white;
+    selection-background-color: #555;
+}
 """
 
 def load_pixel_font(size=12):

@@ -8,10 +8,12 @@ from extract import StegoExtract
 import os
 import shutil
 import tempfile
+import time
 
 class ExtractWorker(QThread):
     finished = pyqtSignal(dict)
     error = pyqtSignal(str)
+    progress = pyqtSignal(int)
 
     def __init__(self, video_path, a51_key=None, stego_key=None, output_dir=None):
         super().__init__()
@@ -28,7 +30,7 @@ class ExtractWorker(QThread):
                 stego_key=self.stego_key,
                 output_dir=self.output_dir
             )
-            res = obj.extraction()
+            res = obj.extraction(progress_callback=self.progress.emit)
             self.finished.emit(res)
         except Exception as e:
             self.error.emit(str(e))
@@ -53,6 +55,7 @@ class ExtractPage(QWidget):
         btn_select.clicked.connect(self.choose_file)
 
         self.file_label = QLabel("No file")
+        self.file_label.setFont(load_pixel_font(8))
         self.file_label.setAlignment(Qt.AlignCenter)
 
         self.cb_encrypt = QCheckBox("Has A5/1 Encryption")
@@ -73,6 +76,11 @@ class ExtractPage(QWidget):
 
         self.progress = QProgressBar()
         self.progress.setVisible(False)
+
+        self.time_label = QLabel("Elapsed Time: 00:00")
+        self.time_label.setFont(load_pixel_font(8))
+        self.time_label.setAlignment(Qt.AlignCenter)
+        self.time_label.setVisible(False)
 
         run = QPushButton("RUN")
         run.setFont(load_pixel_font(10))
@@ -113,6 +121,7 @@ class ExtractPage(QWidget):
         layout.addWidget(self.input_stego)
         
         layout.addWidget(self.progress)
+        layout.addWidget(self.time_label)
         layout.addWidget(run)
         layout.addWidget(self.result_title)
         layout.addWidget(self.result_box)
@@ -140,6 +149,12 @@ class ExtractPage(QWidget):
 
         self.progress.setVisible(True)
         self.progress.setValue(0)
+        self.time_label.setVisible(True)
+        self.time_label.setText("Elapsed Time: 00:00")
+        self.start_time = time.time()
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_timer)
+        self.timer.start(1000)
         self.result_box.setText("Extracting...")
         self.result_title.setText("")
         self.download_btn.setVisible(False)
@@ -149,7 +164,7 @@ class ExtractPage(QWidget):
 
         temp_dir = tempfile.gettempdir()
 
-        self.start_progress()
+        # self.start_progress()
 
         self.thread = ExtractWorker(
             video_path=self.video_path,
@@ -157,23 +172,31 @@ class ExtractPage(QWidget):
             stego_key=stego_key,
             output_dir=temp_dir
         )
+        self.thread.progress.connect(self.progress.setValue)
         self.thread.finished.connect(self.finish_extract)
         self.thread.error.connect(self.show_error)
         self.thread.start()
 
-    def start_progress(self):
-        self.val = 0
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_bar)
-        self.timer.start(80)
+    # def start_progress(self):
+    #     self.val = 0
+    #     self.timer = QTimer()
+    #     self.timer.timeout.connect(self.update_bar)
+    #     self.timer.start(80)
 
-    def update_bar(self):
-        if self.val < 90:
-            self.val += 1
-            self.progress.setValue(self.val)
+    # def update_bar(self):
+    #     if self.val < 90:
+    #         self.val += 1
+    #         self.progress.setValue(self.val)
+
+    def update_timer(self):
+        elapsed = int(time.time() - self.start_time)
+        mins, secs = divmod(elapsed, 60)
+        self.time_label.setText(f"Elapsed Time: {mins:02d}:{secs:02d}")
 
     def finish_extract(self, res):
-        self.timer.stop()
+        # self.timer.stop()
+        if hasattr(self, "timer"): 
+            self.timer.stop()
         self.progress.setValue(100)
 
         data_type = res.get("type", "").lower()
@@ -195,6 +218,7 @@ class ExtractPage(QWidget):
         if hasattr(self, "timer"):
             self.timer.stop()
         self.progress.setVisible(False)
+        self.time_label.setVisible(False)
         self.result_box.setText(f"Error: {msg}")
         self.result_title.setText("EXTRACTION FAILED")
 

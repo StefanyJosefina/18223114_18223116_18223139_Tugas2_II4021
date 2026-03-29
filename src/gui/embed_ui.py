@@ -9,10 +9,12 @@ import cv2
 import os
 import shutil
 import tempfile
+import time
 
 class EmbedWorker(QThread):
     finished = pyqtSignal(dict)
     error = pyqtSignal(str)
+    progress = pyqtSignal(int)
 
     def __init__(self, video, payload, output_format, is_file=False, a51_key=None, stego_key=None, lsb_scheme=1, encrypt=False, use_random=False):
         super().__init__()
@@ -44,7 +46,8 @@ class EmbedWorker(QThread):
             result = obj.run_embedding(
                 is_file=self.is_file,
                 encrypt=self.encrypt,
-                use_random=self.use_random
+                use_random=self.use_random,
+                progress_callback=self.progress.emit
             )
 
             self.finished.emit({
@@ -80,6 +83,7 @@ class EmbedPage(QWidget):
         btn_select.clicked.connect(self.choose_video)
 
         self.file_label = QLabel("No file")
+        self.file_label.setFont(load_pixel_font(8))
         self.file_label.setAlignment(Qt.AlignCenter)
 
         self.capacity_label = QLabel("")
@@ -119,6 +123,7 @@ class EmbedPage(QWidget):
         self.file_btn.setVisible(False)
 
         self.payload_label = QLabel("")
+        self.payload_label.setFont(load_pixel_font(8))
         self.payload_label.setAlignment(Qt.AlignCenter)
         self.payload_label.setVisible(False)
 
@@ -162,6 +167,11 @@ class EmbedPage(QWidget):
         self.progress = QProgressBar()
         self.progress.setVisible(False)
 
+        self.time_label = QLabel("Elapsed Time: 00:00")
+        self.time_label.setFont(load_pixel_font(8))
+        self.time_label.setAlignment(Qt.AlignCenter)
+        self.time_label.setVisible(False)
+
         run = QPushButton("RUN")
         run.setFont(load_pixel_font(10))
         run.clicked.connect(self.run_embed)
@@ -195,6 +205,7 @@ class EmbedPage(QWidget):
         layout.addLayout(format_layout)
         
         layout.addWidget(self.progress)
+        layout.addWidget(self.time_label)
         layout.addWidget(run)
         layout.addWidget(self.download_btn)
         layout.addWidget(self.result)
@@ -260,6 +271,11 @@ class EmbedPage(QWidget):
             self.file_path = file
             self.payload_label.setText(os.path.basename(file))
 
+    def update_timer(self):
+        elapsed = int(time.time() - self.start_time)
+        mins, secs = divmod(elapsed, 60)
+        self.time_label.setText(f"Elapsed Time: {mins:02d}:{secs:02d}")
+
     def run_embed(self):
         if not self.video_path:
             self.result.setText("Select video first")
@@ -304,9 +320,15 @@ class EmbedPage(QWidget):
         self.download_btn.setVisible(False)
         self.progress.setVisible(True)
         self.progress.setValue(0)
+        self.time_label.setVisible(True)
+        self.time_label.setText("Elapsed Time: 00:00")
+        self.start_time = time.time()
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_timer)
+        self.timer.start(1000)
         self.result.setText("")
 
-        self.start_progress()
+        # self.start_progress()
 
         self.thread = EmbedWorker(
             video=self.video_path,
@@ -319,23 +341,26 @@ class EmbedPage(QWidget):
             encrypt=encrypt,
             use_random=use_random
         )
+        self.thread.progress.connect(self.progress.setValue)
         self.thread.finished.connect(self.finish)
         self.thread.error.connect(self.show_error)
         self.thread.start()
 
-    def start_progress(self):
-        self.val = 0
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_bar)
-        self.timer.start(80)
+    # def start_progress(self):
+    #     self.val = 0
+    #     self.timer = QTimer()
+    #     self.timer.timeout.connect(self.update_bar)
+    #     self.timer.start(80)
 
-    def update_bar(self):
-        if self.val < 90:
-            self.val += 1
-            self.progress.setValue(self.val)
+    # def update_bar(self):
+    #     if self.val < 90:
+    #         self.val += 1
+    #         self.progress.setValue(self.val)
 
     def finish(self, data):
-        self.timer.stop()
+        # self.timer.stop()
+        if hasattr(self, "timer"): 
+            self.timer.stop()
         self.progress.setValue(100)
 
         self.output_path = data["path"]
@@ -387,4 +412,5 @@ class EmbedPage(QWidget):
         if hasattr(self, "timer"):
             self.timer.stop()
         self.progress.setVisible(False)
+        self.time_label.setVisible(False)
         self.result.setText(msg)
