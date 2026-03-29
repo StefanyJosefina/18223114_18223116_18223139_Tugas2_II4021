@@ -1,5 +1,5 @@
-PyQt5==5.15.10
-opencv-python==4.9.0.80
-matplotlib==3.8.2
-imageio==2.34.0
-numpy==1.26.4
+PyQt5==5.15.11
+opencv-python==4.13.0.92
+matplotlib==3.10.8
+imageio==2.37.3pip
+numpy==2.4.3
