@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton,
-    QFileDialog, QLabel
+    QFileDialog, QLabel, QHBoxLayout
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap
@@ -27,7 +27,7 @@ class HistogramPage(QWidget):
         layout.setAlignment(Qt.AlignCenter)
         layout.setSpacing(10)
 
-        title = QLabel("HISTOGRAM")
+        title = QLabel("HISTOGRAM ANALYSIS")
         title.setFont(load_pixel_font(14))
         title.setAlignment(Qt.AlignCenter)
 
@@ -47,9 +47,18 @@ class HistogramPage(QWidget):
         self.label_stego.setFont(load_pixel_font(8))
         self.label_stego.setAlignment(Qt.AlignCenter)
 
-        run = QPushButton("SHOW HISTOGRAM")
-        run.setFont(load_pixel_font(10))
-        run.clicked.connect(self.generate_histogram)
+        button_layout = QHBoxLayout()
+        
+        run_normal = QPushButton("SHOW OVERLAY HIST")
+        run_normal.setFont(load_pixel_font(10))
+        run_normal.clicked.connect(self.generate_histogram)
+        
+        run_diff = QPushButton("SHOW DIFF HIST")
+        run_diff.setFont(load_pixel_font(10))
+        run_diff.clicked.connect(self.generate_diff_histogram)
+        
+        button_layout.addWidget(run_normal)
+        button_layout.addWidget(run_diff)
 
         self.image_label = QLabel()
         self.image_label.setAlignment(Qt.AlignCenter)
@@ -72,7 +81,7 @@ class HistogramPage(QWidget):
         layout.addWidget(self.label_original)
         layout.addWidget(btn_stego)
         layout.addWidget(self.label_stego)
-        layout.addWidget(run)
+        layout.addLayout(button_layout) 
         layout.addWidget(self.image_label)
         layout.addWidget(self.download_btn)
         layout.addWidget(self.info)
@@ -100,7 +109,7 @@ class HistogramPage(QWidget):
         return frame if ret else None
 
     def plot_hist(self, frame, title):
-        colors = ('r', 'g', 'b')
+        colors = ('b', 'g', 'r') 
         for i, c in enumerate(colors):
             hist = cv2.calcHist([frame], [i], None, [256], [0, 256])
             plt.plot(hist, color=c)
@@ -154,6 +163,55 @@ class HistogramPage(QWidget):
         self.image_label.setScaledContents(True)
         self.image_label.setMaximumHeight(400)
 
+        self.update_info_panel(frame_ori, frame_stego)
+
+    def generate_diff_histogram(self):
+        if not self.original_path or not self.stego_path:
+            self.info.setText("Select both videos first")
+            return
+
+        frame_ori = self.get_frame(self.original_path)
+        frame_stego = self.get_frame(self.stego_path)
+
+        if frame_ori is None or frame_stego is None:
+            self.info.setText("Error reading video")
+            return
+
+        frame_ori_int = frame_ori.astype(np.int16)
+        frame_stego_int = frame_stego.astype(np.int16)
+
+        diff_frame = frame_stego_int - frame_ori_int
+
+        colors = ('b', 'g', 'r')
+        fig, axes = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
+        fig.suptitle('Difference Histogram (Stego - Original)', fontsize=14, fontweight='bold')
+
+        bins = np.arange(-5, 7) - 0.5 
+
+        for i, col in enumerate(colors):
+            channel_diff = diff_frame[:, :, i].flatten()
+
+            axes[i].hist(channel_diff, bins=bins, color=col, alpha=0.8, edgecolor='black', rwidth=0.8)
+            axes[i].set_title(f'Difference Channel {col.upper()}', fontsize=10)
+            axes[i].set_xticks(np.arange(-5, 6))
+            
+            axes[i].set_yscale('log') 
+            axes[i].grid(axis='y', linestyle='--', alpha=0.5)
+
+        plt.xlabel('Nilai Selisih Piksel (Stego - Original)')
+        plt.ylabel('Frekuensi (Log Scale)')
+        plt.tight_layout()
+        plt.savefig(self.image_path, bbox_inches='tight')
+        plt.close()
+
+        pixmap = QPixmap(self.image_path)
+        self.image_label.setPixmap(pixmap)
+        self.image_label.setScaledContents(True)
+        self.image_label.setMaximumHeight(550) 
+
+        self.update_info_panel(frame_ori, frame_stego)
+
+    def update_info_panel(self, frame_ori, frame_stego):
         mse, psnr, quality = self.calculate_metrics(frame_ori, frame_stego)
 
         self.download_btn.setVisible(True)
